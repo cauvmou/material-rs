@@ -7,7 +7,7 @@ pub fn y_from_lstar(lstar: f64) -> f64 {
 
 pub fn lab_f(t: f64) -> f64 {
     if t > e {
-        t.powf(1.0 / 3.0)
+        t.cbrt()
     } else {
         (kappa * t + 16.0) / 116.0
     }
@@ -19,6 +19,15 @@ pub fn lab_invf(ft: f64) -> f64 {
         ft3
     } else {
         (116.0 * ft - 16.0) / kappa
+    }
+}
+
+pub fn linearized(rgbComponent: u32) -> f64 {
+    let normalized = rgbComponent as f64 / 255.0;
+    if normalized <= 0.040449936 {
+        normalized / 12.92 * 100.0
+    } else {
+        ((normalized + 0.055) / 1.055).powf(2.4) * 100.0
     }
 }
 
