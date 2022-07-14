@@ -1,7 +1,44 @@
-use crate::utils::linearized;
+use crate::{utils::{linearized, argb_from_xyz}, hct::viewing_conditions};
 
 use super::viewing_conditions::{ViewingConditions};
 
+#[derive(Debug, Copy, Clone)]
+pub struct JCh {
+    j: f64,
+    c: f64,
+    h: f64,
+}
+
+impl JCh {
+    pub fn new(j: f64, c: f64, h: f64) -> Self {
+        Self { j, c, h }
+    }
+}
+
+impl From<(f64, f64, f64)> for JCh {
+    fn from(v: (f64, f64, f64)) -> Self {
+        JCh::new(v.0, v.1, v.2)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct UCS {
+    jstar: f64,
+    astar: f64,
+    bstar: f64,
+}
+
+impl UCS {
+    pub fn new(jstar: f64, astar: f64, bstar: f64) -> Self {
+        Self { jstar, astar, bstar }
+    }
+}
+
+impl From<(f64, f64, f64)> for UCS {
+    fn from(v: (f64, f64, f64)) -> Self {
+        UCS::new(v.0, v.1, v.2)
+    }
+}
 
 /**
  * CAM16, a color appearance model. Colors are not just defined by their hex
@@ -20,6 +57,7 @@ use super::viewing_conditions::{ViewingConditions};
  * point is accurately measured as a slightly chromatic blue by CAM16. (roughly,
  * hue 203, chroma 3, lightness 100)
  */
+#[derive(Debug, Copy, Clone)]
 pub struct Cam16 {
     pub hue: f64,
     pub chroma: f64,
@@ -33,6 +71,10 @@ pub struct Cam16 {
 }
 
 impl Cam16 {
+    /**
+     * Google... WHAT?
+     * Life is too short man...
+    */
     pub fn from_int_in_viewing_conditions(argb: u32, viewing_conditions: ViewingConditions) -> Self {
         let red = (argb & 0x00ff0000) >> 16;
         let green = (argb & 0x0000ff00) >> 8;
@@ -54,8 +96,8 @@ impl Cam16 {
 
         let r_af = ((viewing_conditions.fl * r_d.abs()) / 100.0).powf(0.42);
         let g_af = ((viewing_conditions.fl * g_d.abs()) / 100.0).powf(0.42);
-        let b_af = ((viewing_conditions.fl * b_d.abs()) / 100.0).powf(0.42);
- 
+        let b_af = (viewing_conditions.fl) / (g_af + 27.13);
+
         let r_a = (r_d.signum() * 400.0 * r_af) / (r_af + 27.13);
         let g_a = (g_d.signum() * 400.0 * g_af) / (g_af + 27.13);
         let b_a = (b_d.signum() * 400.0 * b_af) / (b_af + 27.13);
@@ -101,10 +143,125 @@ impl Cam16 {
             bstar,
         }
     }
+
+    pub fn from_jch_in_viewing_conditions(jch: JCh, viewing_conditions: ViewingConditions) -> Self {
+        let JCh { j, c, h } = jch;
+        let q = (4.0 / viewing_conditions.c) * (j / 100.0).sqrt() *
+        (viewing_conditions.aw + 4.0) * viewing_conditions.f_l_root;
+        let m = c * viewing_conditions.f_l_root;
+        let alpha = c / (j / 100.0).sqrt();
+        let s = 50.0 *
+            ((alpha * viewing_conditions.c) / (viewing_conditions.aw + 4.0)).sqrt();
+        let hue_radians = (h * std::f64::consts::PI) / 180.0;
+        let jstar = ((1.0 + 100.0 * 0.007) * j) / (1.0 + 0.007 * j);
+        let mstar = (1.0 / 0.0228) * (1.0 + 0.0228 * m).log(std::f64::consts::E);
+        let astar = mstar * (hue_radians).cos();
+        let bstar = mstar * (hue_radians).sin();
+        Cam16 {
+            hue: h,
+            chroma: c,
+            j,
+            q,
+            m,
+            s,
+            jstar,
+            astar,
+            bstar,
+        }
+    }
+
+    pub fn from_ucs_in_viewing_conditions(ucs: UCS, viewing_conditions: ViewingConditions) -> Self {
+        let UCS { jstar, astar, bstar } = ucs;
+        let a = astar;
+        let b = bstar;
+        let m = (a * a + b * b).sqrt();
+        let M = ((m * 0.0228).exp() - 1.0) / 0.0228;
+        let c = M / viewing_conditions.f_l_root;
+        let h = {
+            let h = f64::atan2(b, a) * (180.0 / std::f64::consts::PI);
+            if h < 0.0 {
+                h + 360.0
+            } else { h }
+        };
+        let j = jstar / (1.0 - (jstar - 100.0) * 0.007);
+        Cam16::from_jch_in_viewing_conditions(JCh::new(j, c, h), viewing_conditions)
+    }
+
+    pub fn distance(&self, other: &Self) -> f64 {
+        let d_j = self.jstar - other.jstar;
+        let d_a = self.astar - other.astar;
+        let d_b = self.bstar - other.bstar;
+        let d_eprime = (d_j * d_j + d_a * d_a + d_b * d_b).sqrt();
+        1.41 * d_eprime.powf(0.63)
+    }
+
+    pub fn viewed(&self, viewing_conditions: ViewingConditions) -> u32 {
+        let alpha = {
+            if self.chroma == 0.0 || self.j == 0.0 {
+                0.0
+            } else {
+                self.chroma / (self.j / 100.0).sqrt()
+            }
+        };
+        let t = (alpha / (1.64 - 0.29f64.powf(viewing_conditions.n)).powf(0.73)).powf(1.0/0.9);
+        let h_rad = (self.hue * std::f64::consts::PI) / 180.0;
+
+        let e_hue = 0.25 * ((h_rad + 2.0).cos() + 3.8);
+        let ac = viewing_conditions.aw * (self.j / 100.0).powf(1.0 / viewing_conditions.c / viewing_conditions.z);
+        let p1 = e_hue * (50000.0 / 13.0) * viewing_conditions.nc * viewing_conditions.ncb;
+        let p2 = ac / viewing_conditions.nbb;
+
+        let h_sin = h_rad.sin();
+        let h_cos = h_rad.cos();
+
+        let gamma = (23.0 * (p2 + 0.305) * t) / (23.0 * p1 + 11.0 * t * h_cos + 108.0 * t * h_sin);
+        let a = gamma * h_cos;
+        let b = gamma * h_sin;
+        let r_a = (460.0 * p2 + 451.0 * a + 288.0 * b) / 1403.0;
+        let g_a = (460.0 * p2 - 891.0 * a - 261.0 * b) / 1403.0;
+        let b_a = (460.0 * p2 - 220.0 * a - 6300.0 * b) / 1403.0;
+
+        let r_cbase = f64::max(0.0, (27.13 * r_a.abs()) / (400.0 - r_a.abs()));
+        let r_c = r_a.signum() * (100.0 / viewing_conditions.fl) * r_cbase.powf( 1.0 / 0.42);
+
+        let g_cbase = f64::max(0.0, (27.13 * g_a.abs()) / (400.0 - g_a.abs()));
+        let g_c = g_a.signum() * (100.0 / viewing_conditions.fl) * g_cbase.powf( 1.0 / 0.42);
+
+        let b_cbase = f64::max(0.0, (27.13 * b_a.abs()) / (400.0 - b_a.abs()));
+        let b_c = b_a.signum() * (100.0 / viewing_conditions.fl) * b_cbase.powf( 1.0 / 0.42);
+
+        let r_f = r_c / viewing_conditions.rgb_d[0];
+        let g_f = g_c / viewing_conditions.rgb_d[1];
+        let b_f = b_c / viewing_conditions.rgb_d[2];
+
+        let x =  1.86206786 * r_f - 1.01125463 * g_f + 0.14918677 * b_f;
+        let y =  0.38752654 * r_f + 0.62144744 * g_f - 0.00897398 * b_f;
+        let z = -0.01584150 * r_f - 0.03412294 * g_f + 1.04996444 * b_f;
+
+        argb_from_xyz(x, y, z)
+    }
 }
 
 impl From<u32> for Cam16 {
     fn from(argb: u32) -> Self {
         Self::from_int_in_viewing_conditions(argb, ViewingConditions::default())
+    }
+}
+
+impl From<JCh> for Cam16 {
+    fn from(jch: JCh) -> Self {
+        Self::from_jch_in_viewing_conditions(jch, ViewingConditions::default())
+    }
+}
+
+impl From<UCS> for Cam16 {
+    fn from(ucs: UCS) -> Self {
+        Self::from_ucs_in_viewing_conditions(ucs, ViewingConditions::default())
+    }
+}
+
+impl Into<u32> for Cam16 {
+    fn into(self) -> u32 {
+        self.viewed(ViewingConditions::default())
     }
 }
