@@ -1,2 +1,3 @@
 pub mod cam16;
-pub mod viewing_conditions;
+pub mod vc;
+pub mod solver;

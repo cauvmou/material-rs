@@ -1,6 +1,6 @@
-use crate::{utils::{linearized, argb_from_xyz}, hct::viewing_conditions};
+use crate::{utils::{color::{linearized, argb_from_xyz}}, hct::vc};
 
-use super::viewing_conditions::{ViewingConditions};
+use super::vc::{ViewingConditions};
 
 #[derive(Debug, Copy, Clone)]
 pub struct JCh {
@@ -106,7 +106,7 @@ impl Cam16 {
         let b = (r_a + g_a - 2.0 * b_a) / 9.0;
         let u = (20.0 * r_a + 20.0 * g_a + 21.0 * b_a) / 20.0;
         let p2 = (40.0 * r_a + 20.0 * g_a + b_a) / 20.0;
-        let atan2 = f64::atan2(b, a);
+        let atan2 = b.atan2(a);
         let atan_degrees = (atan2 * 180.0) / std::f64::consts::PI;
         let hue = if atan_degrees < 0.0 { atan_degrees + 360.0 }
             else if atan_degrees >= 360.0 { atan_degrees - 360.0 }
@@ -178,7 +178,7 @@ impl Cam16 {
         let M = ((m * 0.0228).exp() - 1.0) / 0.0228;
         let c = M / viewing_conditions.f_l_root;
         let h = {
-            let h = f64::atan2(b, a) * (180.0 / std::f64::consts::PI);
+            let h = b.atan2(a) * (180.0 / std::f64::consts::PI);
             if h < 0.0 {
                 h + 360.0
             } else { h }

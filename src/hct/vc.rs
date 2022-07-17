@@ -1,4 +1,4 @@
-use crate::utils::{self, lerp, y_from_lstar};
+use crate::utils::{self, math::lerp, color::y_from_lstar};
 
 
 const PI_FRAC_200: f64 = 200.0 / std::f64::consts::PI;
@@ -47,7 +47,7 @@ impl ViewingConditionsBuilder {
     pub fn new() -> Self {
         Self {
             white_point: [95.047, 100.0, 108.883],
-            adapting_luminance: PI_FRAC_200 * utils::y_from_lstar(50.0) / 100.0,
+            adapting_luminance: PI_FRAC_200 * y_from_lstar(50.0) / 100.0,
             background_lstar: 50.0,
             surround: 2.0,
             discounting_illumination: false,
@@ -112,21 +112,21 @@ impl ViewingConditionsBuilder {
         ];
         let k = 1.0 / (5.0 * self.adapting_luminance + 1.0);
         let k4 = k * k * k * k;
-        let k4F = 1.0 - k4;
-        let fl = k4 * self.adapting_luminance + 0.1 * k4F * k4F * (0.5 * self.adapting_luminance).cbrt();
+        let k4_f = 1.0 - k4;
+        let fl = k4 * self.adapting_luminance + 0.1 * k4_f * k4_f * (0.5 * self.adapting_luminance).cbrt();
         let n = y_from_lstar(self.background_lstar) / self.white_point[1];
         let z = 1.48 + n.sqrt();
         let nbb = 0.725 / n.powf(0.2);
         let ncb = nbb;
-        let rgbAFactors = [
+        let rgb_afactors = [
             ((fl * rgb_d[0] * rW) / 100.0).powf(0.42),
             ((fl * rgb_d[1] * gW) / 100.0).powf(0.42),
             ((fl * rgb_d[2] * bW) / 100.0).powf(0.42),
         ];
         let rgbA = [
-            (400.0 * rgbAFactors[0]) / (rgbAFactors[0] + 27.13),
-            (400.0 * rgbAFactors[1]) / (rgbAFactors[1] + 27.13),
-            (400.0 * rgbAFactors[2]) / (rgbAFactors[2] + 27.13),
+            (400.0 * rgb_afactors[0]) / (rgb_afactors[0] + 27.13),
+            (400.0 * rgb_afactors[1]) / (rgb_afactors[1] + 27.13),
+            (400.0 * rgb_afactors[2]) / (rgb_afactors[2] + 27.13),
         ];
         let aw = (2.0 * rgbA[0] + rgbA[1] + 0.05 * rgbA[2]) * nbb;
         ViewingConditions {
