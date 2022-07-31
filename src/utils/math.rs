@@ -16,3 +16,15 @@ pub fn sanitize_degrees_double(mut degrees: f64) -> f64 {
     }
     degrees
 }
+
+pub fn difference_degrees(a: f64, b: f64) -> f64 {
+    180.0 - ((a - b).abs() - 180.0).abs()
+}
+
+pub fn rotation_direction(from: f64, to: f64) -> f64 {
+    if sanitize_degrees_double(to - from) <= 180.0 {
+        1.0
+    } else {
+        -1.0
+    }
+}

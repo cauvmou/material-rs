@@ -6,7 +6,7 @@ pub mod cam16;
 pub mod solver;
 pub mod vc;
 
-struct HCT {
+pub struct HCT {
     hue: f64,
     chroma: f64,
     tone: f64,
