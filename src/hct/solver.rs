@@ -1,42 +1,35 @@
 use std::ops::Mul;
 
+use crate::utils::{
+    color::{argb_from_linrgb, argb_from_lstar, y_from_lstar},
+    math::{matrix_multiply, sanitize_degrees_double},
+};
+
+use super::{cam16::Cam16, vc::ViewingConditions};
+
 const SCALED_DISCOUNT_FROM_LINRGB: [[f64; 3]; 3] = [
     [
-      0.001200833568784504,
-      0.002389694492170889,
-      0.0002795742885861124,
+        0.001200833568784504,
+        0.002389694492170889,
+        0.0002795742885861124,
     ],
     [
-      0.0005891086651375999,
-      0.0029785502573438758,
-      0.0003270666104008398,
+        0.0005891086651375999,
+        0.0029785502573438758,
+        0.0003270666104008398,
     ],
     [
-      0.00010146692491640572,
-      0.0005364214359186694,
-      0.0032979401770712076,
+        0.00010146692491640572,
+        0.0005364214359186694,
+        0.0032979401770712076,
     ],
 ];
 
 const LINRGB_FROM_SCALED_DISCOUNT: [[f64; 3]; 3] = [
-    [
-      1373.2198709594231,
-      -1100.4251190754821,
-      -7.278681089101213,
-    ],
-    [
-      -271.815969077903,
-      559.6580465940733,
-      -32.46047482791194,
-    ],
-    [
-      1.9622899599665666,
-      -57.173814538844006,
-      308.7233197812385,
-    ],
+    [1373.2198709594231, -1100.4251190754821, -7.278681089101213],
+    [-271.815969077903, 559.6580465940733, -32.46047482791194],
+    [1.9622899599665666, -57.173814538844006, 308.7233197812385],
 ];
-
-const Y_FROM_LINRGB: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
 const CRITICAL_PLANES: [f64; 255] = [
     0.015176349177441876, 0.045529047532325624, 0.07588174588720938,
@@ -126,7 +119,9 @@ const CRITICAL_PLANES: [f64; 255] = [
     97.78421388448044,    98.6670533535366,     99.55452497210776,
 ];
 
-fn sanitizre_radians(angle: f64) -> f64 {
+const Y_FROM_LINRGB: [f64; 3] = [0.2126, 0.7152, 0.0722];
+
+fn sanitize_radians(angle: f64) -> f64 {
     (angle + std::f64::consts::PI) % (std::f64::consts::TAU)
 }
 
@@ -146,9 +141,15 @@ fn chromatic_adaptation(component: f64) -> f64 {
 
 fn hue_of(linrgb: [f64; 3]) -> f64 {
     let scaled_discount = [
-        linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[0][0] + linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[1][0] + linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[2][0],
-        linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[0][1] + linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[1][0] + linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[2][1],
-        linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[0][2] + linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[1][0] + linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[2][2],
+        linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[0][0]
+            + linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[1][0]
+            + linrgb[0] * SCALED_DISCOUNT_FROM_LINRGB[2][0],
+        linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[0][1]
+            + linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[1][0]
+            + linrgb[1] * SCALED_DISCOUNT_FROM_LINRGB[2][1],
+        linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[0][2]
+            + linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[1][0]
+            + linrgb[2] * SCALED_DISCOUNT_FROM_LINRGB[2][2],
     ];
 
     let r_a = chromatic_adaptation(scaled_discount[0]);
@@ -162,97 +163,233 @@ fn hue_of(linrgb: [f64; 3]) -> f64 {
 }
 
 fn are_in_cyclic_order(a: f64, b: f64, c: f64) -> bool {
-    sanitizre_radians(b - a) < sanitizre_radians(c - a)
+    sanitize_radians(b - a) < sanitize_radians(c - a)
 }
 
 fn intercept(source: f64, mid: f64, target: f64) -> f64 {
-  (mid - source) / (target - source)
+    (mid - source) / (target - source)
 }
 
 fn lerp_point(source: [f64; 3], t: f64, target: [f64; 3]) -> [f64; 3] {
-  [
-    source[0] + (target[0] - source[0]) * t,
-    source[1] + (target[1] - source[1]) * t,
-    source[2] + (target[2] - source[2]) * t,
-  ]
+    [
+        source[0] + (target[0] - source[0]) * t,
+        source[1] + (target[1] - source[1]) * t,
+        source[2] + (target[2] - source[2]) * t,
+    ]
 }
 
 fn set_coordinate(source: [f64; 3], coordinate: f64, target: [f64; 3], axis: usize) -> [f64; 3] {
-  let t = intercept(source[axis], coordinate, target[axis]);
-  lerp_point(source, t, target)
+    let t = intercept(source[axis], coordinate, target[axis]);
+    lerp_point(source, t, target)
 }
 
 fn is_bounded(x: f64) -> bool {
-  0.0 <= x && x <= 100.0
+    0.0 <= x && x <= 100.0
 }
 
 fn nth_vertex(y: f64, n: usize) -> [f64; 3] {
-  let k_r = Y_FROM_LINRGB[0];
-  let k_g = Y_FROM_LINRGB[1];
-  let k_b = Y_FROM_LINRGB[2];
-  let coord_a = if n % 4 <= 1 { 0.0 } else { 100.0 };
-  let coord_b = if n % 2 == 0 { 0.0 } else { 100.0 };
+    let k_r = Y_FROM_LINRGB[0];
+    let k_g = Y_FROM_LINRGB[1];
+    let k_b = Y_FROM_LINRGB[2];
+    let coord_a = if n % 4 <= 1 { 0.0 } else { 100.0 };
+    let coord_b = if n % 2 == 0 { 0.0 } else { 100.0 };
 
-  if n < 4 {
-    let (g, b) = (coord_a, coord_b);
-    let r = (y - g * k_g - b * k_b) / k_r;
-    if is_bounded(r) {
-      return [r, g, b];
+    if n < 4 {
+        let (g, b) = (coord_a, coord_b);
+        let r = (y - g * k_g - b * k_b) / k_r;
+        if is_bounded(r) {
+            return [r, g, b];
+        } else {
+            return [-1.0, -1.0, -1.0];
+        }
+    } else if n < 8 {
+        let (b, r) = (coord_a, coord_b);
+        let g = (y - r * k_r - b * k_b) / k_g;
+        if is_bounded(g) {
+            return [r, g, b];
+        } else {
+            return [-1.0, -1.0, -1.0];
+        }
     } else {
-      return [-1.0, -1.0, -1.0];
+        let (r, g) = (coord_a, coord_b);
+        let b = (y - r * k_r - g * k_g) / k_b;
+        if is_bounded(b) {
+            return [r, g, b];
+        } else {
+            return [-1.0, -1.0, -1.0];
+        }
     }
-  } else if n < 8 {
-    let (b, r) = (coord_a, coord_b);
-    let g = (y - r * k_r - b * k_b) / k_g;
-    if is_bounded(g) {
-      return [r, g, b];
-    } else {
-      return [-1.0, -1.0, -1.0];
-    }
-  } else {
-    let (r, g) = (coord_a, coord_b);
-    let b = (y - r * k_r - g * k_g) / k_b;
-    if is_bounded(b) {
-      return [r, g, b];
-    } else {
-      return [-1.0, -1.0, -1.0];
-    }
-  }
 }
 
 fn bisect_to_segment(y: f64, target_hue: f64) -> [[f64; 3]; 2] {
-  let mut left = [-1.0, -1.0, -1.0];
-  let mut left_hue = 0.0;
-  let mut right = [-1.0, -1.0, -1.0];
-  let mut right_hue = 0.0;
+    let mut left = [-1.0, -1.0, -1.0];
+    let mut left_hue = 0.0;
+    let mut right = [-1.0, -1.0, -1.0];
+    let mut right_hue = 0.0;
 
-  let mut initialized = false;
-  let mut uncut = true;
+    let mut initialized = false;
+    let mut uncut = true;
 
-  for n in 0..12usize {
-    let mid = nth_vertex(y, n);
-    if mid[0] < 0.0 { continue; }
-    let mid_hue = hue_of(mid);
-    if !initialized {
-      left = mid;
-      right = mid;
-      left_hue = mid_hue;
-      right_hue = mid_hue;
-      initialized = true;
-      continue;
+    for n in 0..12usize {
+        let mid = nth_vertex(y, n);
+        if mid[0] < 0.0 {
+            continue;
+        }
+        let mid_hue = hue_of(mid);
+        if !initialized {
+            left = mid;
+            right = mid;
+            left_hue = mid_hue;
+            right_hue = mid_hue;
+            initialized = true;
+            continue;
+        }
+        if uncut || are_in_cyclic_order(left_hue, mid_hue, right_hue) {
+            uncut = false;
+            if are_in_cyclic_order(left_hue, target_hue, mid_hue) {
+                right = mid;
+                right_hue = mid_hue;
+            } else {
+                left = mid;
+                left_hue = mid_hue;
+            }
+        }
     }
-    if uncut || are_in_cyclic_order(left_hue, mid_hue, right_hue) {
-      uncut = false;
-      if are_in_cyclic_order(left_hue, target_hue, mid_hue) {
-        right = mid;
-        right_hue = mid_hue;
-      } else {
-        left = mid;
-        left_hue = mid_hue;
-      }
-    }
-  }
 
-  [left, right]
+    [left, right]
 }
 
+fn midpoint(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        (a[0] + b[0]) / 2.0,
+        (a[1] + b[1]) / 2.0,
+        (a[2] + b[2]) / 2.0,
+    ]
+}
+
+// Not sure about the data type
+fn critical_plane_below(x: f64) -> isize {
+    (x - 0.5).floor() as isize
+}
+// Not sure about the data type
+fn critical_plane_above(x: f64) -> isize {
+    (x - 0.5).ceil() as isize
+}
+
+fn bisect_to_limit(y: f64, target_hue: f64) -> [f64; 3] {
+    let segment = bisect_to_segment(y, target_hue);
+    let mut left = segment[0];
+    let mut left_hue = hue_of(left);
+    let mut right = segment[1];
+    for axis in 0..3 {
+        if left[axis] != right[axis] {
+            let mut l_plane = -1;
+            let mut r_plane = 255;
+            if left[axis] < right[axis] {
+                l_plane = critical_plane_below(true_delinearized(left[axis]));
+                r_plane = critical_plane_above(true_delinearized(right[axis]));
+            } else {
+                l_plane = critical_plane_above(true_delinearized(left[axis]));
+                r_plane = critical_plane_below(true_delinearized(right[axis]));
+            }
+            for i in 0..8 {
+                if (r_plane - l_plane).abs() <= 1 {
+                    break;
+                } else {
+                    let m_plane = ((l_plane + r_plane) / 2).abs();
+                    let mid_plane_coordinate = CRITICAL_PLANES[m_plane as usize];
+                    let mid = set_coordinate(left, mid_plane_coordinate, right, axis);
+                    let mid_hue = hue_of(mid);
+                    if are_in_cyclic_order(left_hue, target_hue, mid_hue) {
+                        right = mid;
+                        r_plane = m_plane;
+                    } else {
+                        left = mid;
+                        left_hue = mid_hue;
+                        l_plane;
+                    }
+                }
+            }
+        }
+    }
+    midpoint(left, right)
+}
+
+fn inverse_chromatic_adaptation(adapted: f64) -> f64 {
+    let adapted_abs = adapted.abs();
+    let base = 0.0f64.max(27.13 * adapted_abs / (400.0 - adapted_abs));
+    adapted.signum() * base.powf(1.0 / 0.42)
+}
+
+fn find_result_by_j(hue_radians: f64, chroma: f64, y: f64) -> u32 {
+    let mut j = y.sqrt() * 11.0;
+    let viewing_conditions = ViewingConditions::default();
+    let t_inner_coeff = 1.0 / (1.64 - 0.29f64.powf(viewing_conditions.n)).powf(0.73);
+    let e_hue = 0.25 * ((hue_radians + 2.0).cos() + 3.8);
+    let p1 = e_hue * (50000.0 / 13.0) * viewing_conditions.nc * viewing_conditions.ncb;
+    let h_sin = hue_radians.sin();
+    let h_cos = hue_radians.cos();
+    for iter_round in 0..5 {
+        let j_norm = j / 100.0;
+        let alpha = if chroma == 0.0 || j == 0.0 {
+            0.0
+        } else {
+            chroma / j_norm.sqrt()
+        };
+        let t = (alpha * t_inner_coeff).powf(1.0 / 0.9);
+        let ac =
+            viewing_conditions.aw * j_norm.powf(1.0 / viewing_conditions.c / viewing_conditions.z);
+        let p2 = ac / viewing_conditions.nbb;
+        let gamma = 23.0 * (p2 + 0.305) * t / (23.0 * p1 * 11.0 * t * h_cos + 108.0 * t * h_sin);
+        let a = gamma * h_cos;
+        let b = gamma * h_sin;
+        let r_a = (460.0 * p2 + 451.0 * a + 288.0 * b) / 1403.0;
+        let g_a = (460.0 * p2 - 891.0 * a - 261.0 * b) / 1403.0;
+        let b_a = (460.0 * p2 - 220.0 * a - 6300.0 * b) / 1403.0;
+        let r_c_scaled = inverse_chromatic_adaptation(r_a);
+        let g_c_scaled = inverse_chromatic_adaptation(g_a);
+        let b_c_scaled = inverse_chromatic_adaptation(b_a);
+        let linrgb = matrix_multiply(
+            [r_c_scaled, g_c_scaled, b_c_scaled],
+            LINRGB_FROM_SCALED_DISCOUNT,
+        );
+        if linrgb[0] < 0.0 || linrgb[1] < 0.0 || linrgb[2] < 0.0 {
+            return 0;
+        }
+        let k_r = Y_FROM_LINRGB[0];
+        let k_g = Y_FROM_LINRGB[1];
+        let k_b = Y_FROM_LINRGB[2];
+        let fnj = k_r * linrgb[0] + k_g * linrgb[1] + k_b * linrgb[2];
+        if fnj <= 0.0 {
+            return 0;
+        }
+        if iter_round == 4 || (fnj - y).abs() < 0.002 {
+            if linrgb[0] > 100.01 || linrgb[1] > 100.01 || linrgb[2] > 100.01 {
+                return 0;
+            }
+            return argb_from_linrgb(linrgb);
+        }
+
+        j = j - (fnj - y) * j / (2.0 * fnj);
+    }
+    return 0;
+}
+
+pub fn solve_to_int(mut hue_degrees: f64, chroma: f64, lstar: f64) -> u32 {
+    if chroma < 0.0001 || lstar < 0.0001 || lstar > 99.9999 {
+        return argb_from_lstar(lstar);
+    }
+    hue_degrees = sanitize_degrees_double(hue_degrees);
+    let hue_radians = hue_degrees / 180.0 * std::f64::consts::PI;
+    let y = y_from_lstar(lstar);
+    let exact_answer = find_result_by_j(hue_radians, chroma, y);
+    if exact_answer != 0 {
+        return exact_answer;
+    }
+    let linrgb = bisect_to_limit(y, hue_radians);
+    argb_from_linrgb(linrgb)
+}
+
+pub fn solve_to_cam(mut hue_degrees: f64, chroma: f64, lstar: f64) -> Cam16 {
+    solve_to_int(hue_degrees, chroma, lstar).into()
+}

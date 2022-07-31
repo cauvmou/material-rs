@@ -1,6 +1,9 @@
-use crate::{utils::{color::{linearized, argb_from_xyz}}, hct::vc};
+use crate::{
+    hct::vc,
+    utils::color::{argb_from_xyz, linearized},
+};
 
-use super::vc::{ViewingConditions};
+use super::vc::ViewingConditions;
 
 #[derive(Debug, Copy, Clone)]
 pub struct JCh {
@@ -30,7 +33,11 @@ pub struct UCS {
 
 impl UCS {
     pub fn new(jstar: f64, astar: f64, bstar: f64) -> Self {
-        Self { jstar, astar, bstar }
+        Self {
+            jstar,
+            astar,
+            bstar,
+        }
     }
 }
 
@@ -61,10 +68,10 @@ impl From<(f64, f64, f64)> for UCS {
 pub struct Cam16 {
     pub hue: f64,
     pub chroma: f64,
-    pub j: f64,    
-    pub q: f64,    
-    pub m: f64,    
-    pub s: f64,    
+    pub j: f64,
+    pub q: f64,
+    pub m: f64,
+    pub s: f64,
     pub jstar: f64,
     pub astar: f64,
     pub bstar: f64,
@@ -74,8 +81,11 @@ impl Cam16 {
     /**
      * Google... WHAT?
      * Life is too short man...
-    */
-    pub fn from_int_in_viewing_conditions(argb: u32, viewing_conditions: ViewingConditions) -> Self {
+     */
+    pub fn from_int_in_viewing_conditions(
+        argb: u32,
+        viewing_conditions: ViewingConditions,
+    ) -> Self {
         let red = (argb & 0x00ff0000) >> 16;
         let green = (argb & 0x0000ff00) >> 8;
         let blue = argb & 0x000000ff;
@@ -108,15 +118,22 @@ impl Cam16 {
         let p2 = (40.0 * r_a + 20.0 * g_a + b_a) / 20.0;
         let atan2 = b.atan2(a);
         let atan_degrees = (atan2 * 180.0) / std::f64::consts::PI;
-        let hue = if atan_degrees < 0.0 { atan_degrees + 360.0 }
-            else if atan_degrees >= 360.0 { atan_degrees - 360.0 }
-            else { atan_degrees };
+        let hue = if atan_degrees < 0.0 {
+            atan_degrees + 360.0
+        } else if atan_degrees >= 360.0 {
+            atan_degrees - 360.0
+        } else {
+            atan_degrees
+        };
         let hue_radians = (hue * std::f64::consts::PI) / 180.0;
 
         let ac = p2 * viewing_conditions.nbb;
-        let j = 100.0 * (ac / viewing_conditions.aw).powf(viewing_conditions.c * viewing_conditions.z);
-        let q = (4.0 / viewing_conditions.c) * (j / 100.0).sqrt() *
-                    (viewing_conditions.aw + 4.0) * viewing_conditions.f_l_root;
+        let j =
+            100.0 * (ac / viewing_conditions.aw).powf(viewing_conditions.c * viewing_conditions.z);
+        let q = (4.0 / viewing_conditions.c)
+            * (j / 100.0).sqrt()
+            * (viewing_conditions.aw + 4.0)
+            * viewing_conditions.f_l_root;
         let hue_prime = if hue < 20.14 { hue + 360.0 } else { hue };
         let e_hue = 0.25 * (((hue_prime * std::f64::consts::PI) / 180.0 + 2.0).cos() + 3.8);
         let p1 = (50000.0 / 13.0) * e_hue * viewing_conditions.nc * viewing_conditions.ncb;
@@ -124,7 +141,7 @@ impl Cam16 {
         let alpha = t.powf(0.9) * (1.64 - 0.29f64.powf(viewing_conditions.n)).powf(0.73);
         let c = alpha * (j / 100.0).sqrt();
         let m = c * viewing_conditions.f_l_root;
-        let s = 50.0 *((alpha * viewing_conditions.c) / (viewing_conditions.aw + 4.0)).sqrt();
+        let s = 50.0 * ((alpha * viewing_conditions.c) / (viewing_conditions.aw + 4.0)).sqrt();
 
         let jstar = ((1.0 + 100.0 * 0.007) * j) / (1.0 + 0.007 * j);
         let mstar = (1.0 / 0.0228) * (1.0 + 0.0228 * m).log(std::f64::consts::E);
@@ -146,12 +163,13 @@ impl Cam16 {
 
     pub fn from_jch_in_viewing_conditions(jch: JCh, viewing_conditions: ViewingConditions) -> Self {
         let JCh { j, c, h } = jch;
-        let q = (4.0 / viewing_conditions.c) * (j / 100.0).sqrt() *
-        (viewing_conditions.aw + 4.0) * viewing_conditions.f_l_root;
+        let q = (4.0 / viewing_conditions.c)
+            * (j / 100.0).sqrt()
+            * (viewing_conditions.aw + 4.0)
+            * viewing_conditions.f_l_root;
         let m = c * viewing_conditions.f_l_root;
         let alpha = c / (j / 100.0).sqrt();
-        let s = 50.0 *
-            ((alpha * viewing_conditions.c) / (viewing_conditions.aw + 4.0)).sqrt();
+        let s = 50.0 * ((alpha * viewing_conditions.c) / (viewing_conditions.aw + 4.0)).sqrt();
         let hue_radians = (h * std::f64::consts::PI) / 180.0;
         let jstar = ((1.0 + 100.0 * 0.007) * j) / (1.0 + 0.007 * j);
         let mstar = (1.0 / 0.0228) * (1.0 + 0.0228 * m).log(std::f64::consts::E);
@@ -171,7 +189,11 @@ impl Cam16 {
     }
 
     pub fn from_ucs_in_viewing_conditions(ucs: UCS, viewing_conditions: ViewingConditions) -> Self {
-        let UCS { jstar, astar, bstar } = ucs;
+        let UCS {
+            jstar,
+            astar,
+            bstar,
+        } = ucs;
         let a = astar;
         let b = bstar;
         let m = (a * a + b * b).sqrt();
@@ -181,7 +203,9 @@ impl Cam16 {
             let h = b.atan2(a) * (180.0 / std::f64::consts::PI);
             if h < 0.0 {
                 h + 360.0
-            } else { h }
+            } else {
+                h
+            }
         };
         let j = jstar / (1.0 - (jstar - 100.0) * 0.007);
         Cam16::from_jch_in_viewing_conditions(JCh::new(j, c, h), viewing_conditions)
@@ -203,11 +227,12 @@ impl Cam16 {
                 self.chroma / (self.j / 100.0).sqrt()
             }
         };
-        let t = (alpha / (1.64 - 0.29f64.powf(viewing_conditions.n)).powf(0.73)).powf(1.0/0.9);
+        let t = (alpha / (1.64 - 0.29f64.powf(viewing_conditions.n)).powf(0.73)).powf(1.0 / 0.9);
         let h_rad = (self.hue * std::f64::consts::PI) / 180.0;
 
         let e_hue = 0.25 * ((h_rad + 2.0).cos() + 3.8);
-        let ac = viewing_conditions.aw * (self.j / 100.0).powf(1.0 / viewing_conditions.c / viewing_conditions.z);
+        let ac = viewing_conditions.aw
+            * (self.j / 100.0).powf(1.0 / viewing_conditions.c / viewing_conditions.z);
         let p1 = e_hue * (50000.0 / 13.0) * viewing_conditions.nc * viewing_conditions.ncb;
         let p2 = ac / viewing_conditions.nbb;
 
@@ -222,20 +247,20 @@ impl Cam16 {
         let b_a = (460.0 * p2 - 220.0 * a - 6300.0 * b) / 1403.0;
 
         let r_cbase = f64::max(0.0, (27.13 * r_a.abs()) / (400.0 - r_a.abs()));
-        let r_c = r_a.signum() * (100.0 / viewing_conditions.fl) * r_cbase.powf( 1.0 / 0.42);
+        let r_c = r_a.signum() * (100.0 / viewing_conditions.fl) * r_cbase.powf(1.0 / 0.42);
 
         let g_cbase = f64::max(0.0, (27.13 * g_a.abs()) / (400.0 - g_a.abs()));
-        let g_c = g_a.signum() * (100.0 / viewing_conditions.fl) * g_cbase.powf( 1.0 / 0.42);
+        let g_c = g_a.signum() * (100.0 / viewing_conditions.fl) * g_cbase.powf(1.0 / 0.42);
 
         let b_cbase = f64::max(0.0, (27.13 * b_a.abs()) / (400.0 - b_a.abs()));
-        let b_c = b_a.signum() * (100.0 / viewing_conditions.fl) * b_cbase.powf( 1.0 / 0.42);
+        let b_c = b_a.signum() * (100.0 / viewing_conditions.fl) * b_cbase.powf(1.0 / 0.42);
 
         let r_f = r_c / viewing_conditions.rgb_d[0];
         let g_f = g_c / viewing_conditions.rgb_d[1];
         let b_f = b_c / viewing_conditions.rgb_d[2];
 
-        let x =  1.86206786 * r_f - 1.01125463 * g_f + 0.14918677 * b_f;
-        let y =  0.38752654 * r_f + 0.62144744 * g_f - 0.00897398 * b_f;
+        let x = 1.86206786 * r_f - 1.01125463 * g_f + 0.14918677 * b_f;
+        let y = 0.38752654 * r_f + 0.62144744 * g_f - 0.00897398 * b_f;
         let z = -0.01584150 * r_f - 0.03412294 * g_f + 1.04996444 * b_f;
 
         argb_from_xyz(x, y, z)

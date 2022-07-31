@@ -1,32 +1,46 @@
-const e:     f64 = 0.008856451679035631;
+use super::math::matrix_multiply;
+
+const e: f64 = 0.008856451679035631;
 const kappa: f64 = 903.2962962962963;
 
+const WHITE_POINT_D65: [f64; 3] = [95.047, 100.0, 108.883];
+
 const SRGB_TO_XYZ: [[f64; 3]; 3] = [
-  [0.41233895, 0.35762064, 0.18051042],
-  [0.2126, 0.7152, 0.0722],
-  [0.01932141, 0.11916382, 0.95034478],
+    [0.41233895, 0.35762064, 0.18051042],
+    [0.2126, 0.7152, 0.0722],
+    [0.01932141, 0.11916382, 0.95034478],
 ];
 
 const XYZ_TO_SRGB: [[f64; 3]; 3] = [
-  [
-    3.2413774792388685,
-    -1.5376652402851851,
-    -0.49885366846268053,
-  ],
-  [
-    -0.9691452513005321,
-    1.8758853451067872,
-    0.04156585616912061,
-  ],
-  [
-    0.05562093689691305,
-    -0.20395524564742123,
-    1.0571799111220335,
-  ],
+    [
+        3.2413774792388685,
+        -1.5376652402851851,
+        -0.49885366846268053,
+    ],
+    [-0.9691452513005321, 1.8758853451067872, 0.04156585616912061],
+    [
+        0.05562093689691305,
+        -0.20395524564742123,
+        1.0571799111220335,
+    ],
 ];
 
 pub fn argb_from_rgb(r: u8, g: u8, b: u8) -> u32 {
     255u32 << 24 | (r as u32) << 16 | (g as u32) << 8 | (b as u32)
+}
+
+pub fn argb_from_linrgb(linrgb: [f64; 3]) -> u32 {
+    argb_from_rgb(
+        delinearized(linrgb[0]),
+        delinearized(linrgb[1]),
+        delinearized(linrgb[2]),
+    )
+}
+
+pub fn argb_from_lstar(lstar: f64) -> u32 {
+    let y = y_from_lstar(lstar);
+    let component = delinearized(y);
+    argb_from_rgb(component, component, component)
 }
 
 pub fn argb_from_xyz(x: f64, y: f64, z: f64) -> u32 {
@@ -42,6 +56,18 @@ pub fn argb_from_xyz(x: f64, y: f64, z: f64) -> u32 {
 
 pub fn y_from_lstar(lstar: f64) -> f64 {
     100.0 * lab_invf((lstar + 16.0) / 116.0)
+}
+
+pub fn xyz_from_argb(argb: u32) -> [f64; 3] {
+    let r = linearized(argb & 0x00f00000);
+    let g = linearized(argb & 0x0000ff00);
+    let b = linearized(argb & 0x000000ff);
+    matrix_multiply([r, g, b], SRGB_TO_XYZ)
+}
+
+pub fn lstar_from_argb(argb: u32) -> f64 {
+    let y = xyz_from_argb(argb)[1];
+    116.0 * lab_f(y / 100.0) - 16.0
 }
 
 pub fn lab_f(t: f64) -> f64 {
@@ -81,4 +107,3 @@ pub fn delinearized(rgbComponent: f64) -> u8 {
     };
     (delinearized * 255.0).round() as u8
 }
-

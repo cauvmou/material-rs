@@ -1,5 +1,4 @@
-use crate::utils::{self, math::lerp, color::y_from_lstar};
-
+use crate::utils::{self, color::y_from_lstar, math::lerp};
 
 const PI_FRAC_200: f64 = 200.0 / std::f64::consts::PI;
 
@@ -85,25 +84,23 @@ impl ViewingConditionsBuilder {
         let gW = xyz[0] * -0.250268 + xyz[1] * 1.204414 + xyz[2] * 0.045854;
         let bW = xyz[0] * -0.002079 + xyz[1] * 0.048952 + xyz[2] * 0.953127;
         let f = 0.8 + self.surround / 10.0;
-        let c =
-            if f >= 0.9 {
-                lerp(0.59, 0.69, (f - 0.9) * 10.0)
-            } else {
-                lerp(0.525, 0.59, (f - 0.8) * 10.0)
-            };
-        let d = 
-            if self.discounting_illumination {
+        let c = if f >= 0.9 {
+            lerp(0.59, 0.69, (f - 0.9) * 10.0)
+        } else {
+            lerp(0.525, 0.59, (f - 0.8) * 10.0)
+        };
+        let d = if self.discounting_illumination {
+            1.0
+        } else {
+            let d = f * (1.0 - (1.0 / 3.6) * ((-self.adapting_luminance - 42.0) / 92.0)).exp();
+            if d > 1.0 {
                 1.0
+            } else if d < 0.0 {
+                0.0
             } else {
-                let d = f * (1.0 - (1.0 / 3.6) * ((-self.adapting_luminance - 42.0) / 92.0)).exp();
-                if d > 1.0 {
-                    1.0
-                } else if d < 0.0 {
-                    0.0
-                } else {
-                    d
-                }
-            };
+                d
+            }
+        };
         let nc = f;
         let rgb_d = [
             d * (100.0 / rW) + 1.0 - d,
@@ -113,7 +110,8 @@ impl ViewingConditionsBuilder {
         let k = 1.0 / (5.0 * self.adapting_luminance + 1.0);
         let k4 = k * k * k * k;
         let k4_f = 1.0 - k4;
-        let fl = k4 * self.adapting_luminance + 0.1 * k4_f * k4_f * (0.5 * self.adapting_luminance).cbrt();
+        let fl = k4 * self.adapting_luminance
+            + 0.1 * k4_f * k4_f * (0.5 * self.adapting_luminance).cbrt();
         let n = y_from_lstar(self.background_lstar) / self.white_point[1];
         let z = 1.48 + n.sqrt();
         let nbb = 0.725 / n.powf(0.2);
