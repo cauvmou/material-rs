@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::hct::HCT;
 
-struct TonalPalette {
+pub struct TonalPalette {
     cache: HashMap<u64, u32>,
     hue: f64,
     chroma: f64,
@@ -13,7 +13,7 @@ impl TonalPalette {
         Self { cache: HashMap::new(), hue, chroma }
     }
 
-    fn tone(&mut self, tone: f64) -> u32 {
+    pub fn tone(&mut self, tone: f64) -> u32 {
         match self.cache.get(&tone.to_bits()) {
             Some(argb) => *argb,
             None => {
@@ -33,12 +33,12 @@ impl From<u32> for TonalPalette {
 }
 
 pub struct CorePalette {
-    a1: TonalPalette,
-    a2: TonalPalette,
-    a3: TonalPalette,
-    n1: TonalPalette,
-    n2: TonalPalette,
-    error: TonalPalette,
+    pub a1: TonalPalette,
+    pub a2: TonalPalette,
+    pub a3: TonalPalette,
+    pub n1: TonalPalette,
+    pub n2: TonalPalette,
+    pub error: TonalPalette,
 }
 
 impl CorePalette {
